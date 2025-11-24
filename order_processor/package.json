@@ -1,0 +1,10 @@
+{
+  "name": "order_processor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "amqplib": "^0.10.3",
+    "kafkajs": "^2.2.4"
+  }
+}

@@ -1,0 +1,131 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=stream
+      - RABBITMQ_DEFAULT_PASS=stream
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.4
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.4
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092" # listener interno (red de Docker)
+      - "29092:29092" # listener expuesto al host
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # Dos listeners en PUERTOS DISTINTOS
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+
+      # Lo que anunciamos a clientes internos/externos
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+
+      # Inter-broker
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Cluster de 1 nodo
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  order_api:
+    build: ./order_api
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://stream:stream@rabbitmq:5672
+      - NEW_ORDERS_QUEUE=new_orders_queue
+      - PORT=3000
+    ports:
+      - "3000:3000"
+
+  order_processor:
+    build: ./order_processor
+    depends_on:
+      - kafka
+      - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://stream:stream@rabbitmq:5672
+      - NEW_ORDERS_QUEUE=new_orders_queue
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=order_events
+      - SERVICE_NAME=order_processor
+
+  driver_simulator:
+    build: ./driver_simulator
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=order_events
+      - GROUP_ID=driver_simulator
+      - ARRIVING_DELAY_MS=10000
+      - DELIVERED_DELAY_MS=5000
+      - SERVICE_NAME=driver_simulator
+
+  notification_router:
+    build: ./notification_router
+    depends_on:
+      - kafka
+      - rabbitmq
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=order_events
+      - GROUP_ID=notification_router
+      - RABBITMQ_URL=amqp://stream:stream@rabbitmq:5672
+      - NOTIF_EXCHANGE=notifications
+      - SERVICE_NAME=notification_router
+
+  sms_worker:
+    build: ./sms_worker
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://stream:stream@rabbitmq:5672
+      - NOTIF_EXCHANGE=notifications
+      - QUEUE_NAME=sms_queue
+      - BINDING_KEY=notify.client.*
+      - SERVICE_NAME=sms_worker
+
+  push_notification_worker:
+    build: ./push_notification_worker
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://stream:stream@rabbitmq:5672
+      - NOTIF_EXCHANGE=notifications
+      - QUEUE_NAME=push_queue
+      - BINDING_KEY=notify.driver.*
+      - SERVICE_NAME=push_notification_worker
+
+  dashboard_backend:
+    build: ./dashboard_backend
+    environment:
+      - PORT=8080
+      - STATIC_DIR=/app/public
+    ports:
+      - "8080:8080"
+
+  dashboard_aggregator:
+    build: ./dashboard_aggregator
+    depends_on:
+      - kafka
+      - dashboard_backend
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=order_events
+      - GROUP_ID=dashboard_aggregator
+      - DASHBOARD_WS_URL=ws://dashboard_backend:8080/ws
+      - SERVICE_NAME=dashboard_aggregator

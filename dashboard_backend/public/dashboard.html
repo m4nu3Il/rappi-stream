@@ -1,0 +1,53 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rappi-Stream Dashboard</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; margin: 20px; }
+    h1 { margin-bottom: 0.5rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f5f5f5; }
+    .status-Asignado { color: #1f75fe; }
+    .status-Llegando { color: #ff8c00; }
+    .status-Entregado { color: #2e8b57; }
+    .status-Creado { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Rappi-Stream: Estado de Pedidos</h1>
+  <p>Abre <code>POST http://localhost:3000/order</code> para crear un pedido y observa el flujo en vivo.</p>
+  <table id="orders">
+    <thead>
+      <tr><th>Pedido</th><th>Cliente</th><th>Repartidor</th><th>Estado</th><th>Último Evento</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'state') {
+        const state = msg.data || {};
+        const tbody = document.querySelector('#orders tbody');
+        tbody.innerHTML = '';
+        Object.entries(state).forEach(([orderId, entry]) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${orderId}</td>
+            <td>${entry.client_id || ''}</td>
+            <td>${entry.driver_id || ''}</td>
+            <td class="status-${entry.status}">${entry.status}</td>
+            <td>${entry.event_type}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+    };
+  </script>
+</body>
+</html>
